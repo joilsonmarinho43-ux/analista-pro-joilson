@@ -289,11 +289,146 @@ def get_all_users_local():
         if st.session_state.get('show_admin', False):
             show_admin_panel()
         else:
-            st.success("✅ Sistema funcionando perfeitamente!")
-            st.info("🎯 Use o menu lateral para gerenciar usuários")
-
+            main_app()
+    
 def show_admin_panel():
     """Painel do Administrador"""
+    st.markdown(f"""
+    <div style='background: linear-gradient(90deg, #e94560 0%, #0f3460 100%); padding: 20px; border-radius: 10px; margin: 20px 0;'>
+        <h2 style='color: white; text-align: center; margin: 0;'>🛠️ PAINEL DO ADMINISTRADOR</h2>
+        <p style='color: white; text-align: center; margin: 5px 0;'>📞 Suporte: (91) 98621-5730</p>
+        <p style='color: #38ef7d; text-align: center; margin: 5px 0;'>🔒 Sistema Privado</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    tab1, tab2, tab3 = st.tabs(["👥 Gerenciar Usuários", "➕ Adicionar Usuário", "📊 Estatísticas"])
+    
+    with tab1:
+        st.markdown("### 📋 Lista de Usuários")
+        
+        users = get_all_users_local()
+        
+        if users:
+            for user in users:
+                col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
+                
+                with col1:
+                    st.write(f"👤 **{user[1]}**")
+                    st.write(f"🎭 Cargo: {user[3]}")
+                    st.write(f"📅 Criado: {user[8][:10]}")
+                    if user[6]:
+                        st.write(f"🗓️ Expira: {user[6]}")
+                    st.write(f"💳 Status: {'✅ Pago' if user[4] else '❌ Pendente'}")
+                
+                with col2:
+                    current_status = st.selectbox(
+                        "Pagamento",
+                        [True, False],
+                        index=0 if user[4] else 1,
+                        key=f"status_{user[0]}",
+                        format_func=lambda x: "✅ Pago" if x else "❌ Pendente"
+                    )
+                
+                with col3:
+                    if st.button("💾", key=f"save_{user[0]}", help="Salvar alterações"):
+                        update_user_status_local(user[0], current_status)
+                        st.success("✅ Alterações salvas!")
+                        st.rerun()
+                
+                with col4:
+                    if user[1] != 'admin@quantelite.com':
+                        if st.button("🔄", key=f"renew_{user[0]}", help="Renovar 31 dias"):
+                            new_expiry = (datetime.now() + timedelta(days=31)).date().isoformat()
+                            conn = sqlite3.connect('users.db')
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                UPDATE users SET status_pagamento = ?, data_expiracao = ?, dias_restantes = ? WHERE id = ?
+                            """, (True, new_expiry, 31, user[0]))
+                            conn.commit()
+                            conn.close()
+                            st.success("✅ Assinatura renovada por 31 dias!")
+                            st.rerun()
+                
+                with col5:
+                    if user[1] != 'admin@quantelite.com':
+                        if st.button("🗑️", key=f"delete_{user[0]}", help="Excluir usuário"):
+                            delete_user_local(user[0])
+                            st.success("✅ Usuário removido!")
+                            st.rerun()
+                
+                st.markdown("---")
+        else:
+            st.info("Nenhum usuário encontrado.")
+    
+    with tab2:
+        st.markdown("### ➕ Cadastrar Novo Usuário")
+        
+        with st.form("add_user_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                new_email = st.text_input("📧 Email do Usuário")
+                new_password = st.text_input("🔒 Senha", type="password")
+                new_role = st.selectbox("🎭 Cargo", ["User", "ADM"])
+            
+            with col2:
+                new_whatsapp = st.text_input("📱 WhatsApp do Usuário", placeholder="(91) 98621-5730")
+                new_status_pagamento = st.selectbox("💳 Status Pagamento", [True, False], 
+                                                   format_func=lambda x: "✅ Pago" if x else "❌ Pendente")
+                new_expiry_date = st.date_input(
+                    "📅 Data de Vencimento",
+                    value=datetime.now().date() + timedelta(days=31),
+                    min_value=datetime.now().date(),
+                    help="Data em que a assinatura do usuário expira"
+                )
+            
+            submitted = st.form_submit_button("➕ Adicionar Usuário")
+            
+            if submitted:
+                if new_email and new_password:
+                    expiry_iso = new_expiry_date.isoformat() if new_role != 'ADM' else None
+                    if add_user_local(new_email, new_password, new_role, new_status_pagamento, 
+                                       new_whatsapp, expiry_iso):
+                        st.success(f"✅ Usuário {new_email} criado com sucesso!")
+                        if new_whatsapp:
+                            st.success(f"📱 WhatsApp: {new_whatsapp}")
+                        if new_role != 'ADM':
+                            st.success(f"📅 Vencimento: {new_expiry_date}")
+                        st.rerun()
+                    else:
+                        st.error("❌ Email já existe ou erro ao criar usuário!")
+                else:
+                    st.error("❌ Preencha todos os campos obrigatórios!")
+    
+    with tab3:
+        st.markdown("### 📊 Estatísticas do Sistema")
+        
+        users = get_all_users_local()
+        
+        total_users = len(users)
+        active_users = len([u for u in users if u[4]])
+        admin_users = len([u for u in users if u[3] == 'ADM'])
+        expired_users = len([u for u in users if not u[4]])
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("👥 Total Usuários", total_users)
+        
+        with col2:
+            st.metric("✅ Usuários Ativos", active_users)
+        
+        with col3:
+            st.metric("👑 Administradores", admin_users)
+        
+        with col4:
+            st.metric("⏰ Inadimplentes", expired_users)
+        
+        st.markdown("---")
+        st.markdown("### 📞 Informações de Contato")
+        st.write("📱 WhatsApp: (91) 98621-5730")
+        st.write("💰 Mensalidade: 31 dias de acesso")
+        st.write("🏆 Versão Profissional - Banco Local")
     st.markdown(f"""
     <div style='background: linear-gradient(90deg, #e94560 0%, #0f3460 100%); padding: 20px; border-radius: 10px; margin: 20px 0;'>
         <h2 style='color: white; text-align: center; margin: 0;'>🛠️ PAINEL DO ADMINISTRADOR</h2>
@@ -393,7 +528,57 @@ def main():
     if not check_authentication():
         show_login()
     else:
-        main_app()
+        # Sidebar com informações do usuário e logout
+        with st.sidebar:
+            st.markdown("---")
+            st.markdown("### 👤 Usuário Logado")
+            st.write(f"**{st.session_state.user[1]}**")
+            st.write(f"🎭 Cargo: {st.session_state.user[3]}")
+            st.write(f"💳 Status: {'✅ Pago' if st.session_state.user[4] else '❌ Pendente'}")
+            
+            # Mostrar informações de validade
+            if st.session_state.user[3] == 'ADM':
+                st.write("🗓️ Expira: **ILIMITADO**")
+                st.write("⏰ Dias restantes: **∞ Ilimitado**")
+            else:
+                if st.session_state.user[6]:
+                    expiry = datetime.strptime(st.session_state.user[6], '%Y-%m-%d').date()
+                    days_left = (expiry - datetime.now().date()).days
+                    st.write(f"🗓️ Expira: {expiry}")
+                    st.write(f"⏰ Dias restantes: {days_left}")
+                    
+                    if days_left <= 5:
+                        st.warning("⚠️ Sua assinatura expira em breve!")
+                    elif days_left <= 0:
+                        st.error("❌ Sua assinatura expirou!")
+            
+            if st.button("🚪 Sair", use_container_width=True):
+                logout()
+            
+            st.markdown("---")
+            st.markdown("### 📞 Informações de Contato")
+            st.write("📱 WhatsApp: (91) 98621-5730")
+            st.write("💳 Chave PIX: cpf 01367822211 joilson moreira marinho")
+            st.write("💰 Mensalidade: 31 dias de acesso")
+            st.write("🏆 Versão Profissional - Banco Local")
+            
+            st.markdown("---")
+        
+        # Apenas administradores podem acessar o painel admin
+        if st.session_state.user[3] == 'ADM':
+            if st.sidebar.button("🛠️ Painel Admin", use_container_width=True):
+                st.session_state.show_admin = not st.session_state.get('show_admin', False)
+            
+            # Mostrar painel admin ou aplicativo principal
+            if st.session_state.get('show_admin', False):
+                show_admin_panel()
+            else:
+                st.success("✅ Sistema funcionando perfeitamente!")
+                st.info("🎯 Use o menu lateral para gerenciar usuários")
+        else:
+            # Usuários comuns veem apenas o aplicativo de análise
+            st.success("✅ Bem-vindo ao sistema!")
+            st.info("🎯 Sistema pronto para uso!")
 
 if __name__ == "__main__":
     main()
